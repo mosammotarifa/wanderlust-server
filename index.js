@@ -6,6 +6,7 @@ require("dotenv").config();
 app.use(cors());
 app.use(express.json());
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { createRemoteJWKSet, jwtVerify } = require("jose");
 
 const uri = process.env.MONGODB_URI;
 if (!uri) {
@@ -24,7 +25,30 @@ const run = async () => {
     const db = client.db("wanderlust");
     const travelCollection = db.collection("travel");
     const bookingCollection = db.collection("booking");
-    app.post("/travel", async (req, res) => {
+    const JWKS = createRemoteJWKSet(
+      new URL("http://localhost:3000/api/auth/jwks"),
+    );
+    const verifyToken = async (req, res, next) => {
+      try {
+        const authHeader = req.headers.authorization;
+
+        if (!authHeader?.startsWith("Bearer ")) {
+          return res.status(401).send({ message: "Unauthorized" });
+        }
+
+        const token = authHeader.split(" ")[1];
+
+        const { payload } = await jwtVerify(token, JWKS);
+
+        req.user = payload;
+
+        next();
+      } catch (error) {
+        console.error("JWT verification error:", error);
+        return res.status(401).send({ message: "Invalid token" });
+      }
+    };
+    app.post("/travel", verifyToken,async (req, res) => {
       try {
         const data = req.body;
         const result = await travelCollection.insertOne(data);
@@ -46,7 +70,7 @@ const run = async () => {
           .send({ message: "failed to get travel data from database" });
       }
     });
-    app.get("/travel/:id", async (req, res) => {
+    app.get("/travel/:id",verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
         const query = { _id: new ObjectId(id) };
@@ -57,7 +81,7 @@ const run = async () => {
         res.status(500).send({ massage: "faied to get data by id " });
       }
     });
-    app.post("/booking", async (req, res) => {
+    app.post("/booking",verifyToken, async (req, res) => {
       try {
         const data = req.body;
         const result = await bookingCollection.insertOne(data);
@@ -67,7 +91,8 @@ const run = async () => {
         res.status(500).send({ message: "failed to send booking card data" });
       }
     });
-    app.get("/booking/:email", async (req, res) => {
+
+    app.get("/booking/:email", verifyToken,async (req, res) => {
       try {
         const email = req.params.email;
         const filter = { userEmail: email };
@@ -79,7 +104,7 @@ const run = async () => {
         res.status(500).send({ message: "failed to get booking card data" });
       }
     });
-    app.patch("/travel/:id", async (req, res) => {
+    app.patch("/travel/:id",verifyToken, async (req, res) => {
       const { id } = req.params;
       const filter = { _id: new ObjectId(id) };
       try {
@@ -91,7 +116,7 @@ const run = async () => {
         res.status(500).send({ message: "failed to update" });
       }
     });
-    app.delete("/travel/:id", async (req, res) => {
+    app.delete("/travel/:id",verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
         const filter = { _id: new ObjectId(id) };
@@ -101,7 +126,7 @@ const run = async () => {
         res.status(500).send({ message: "failed to get deletedata" });
       }
     });
-    app.delete("/booking/:id", async (req, res) => {
+    app.delete("/booking/:id",verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
         const filter = { _id: new ObjectId(id) };
